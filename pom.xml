@@ -18,6 +18,7 @@
 	
 	<modules>
 		<module>db-ha-core</module>
+		<module>db-ha-test</module>
 	</modules>
 	
 	<properties>
@@ -128,7 +129,13 @@
 			    <groupId>com.alibaba</groupId>
 			    <artifactId>druid</artifactId>
 			    <version>${druid.version}</version>
-			</dependency> 
+			</dependency>
+			
+			<dependency>
+				<groupId>com.sxb.web</groupId>
+				<artifactId>sxb-commons</artifactId>
+				<version>4.6.4.01-RELEASE</version>
+			</dependency>
 		
 		</dependencies>
 	</dependencyManagement>
