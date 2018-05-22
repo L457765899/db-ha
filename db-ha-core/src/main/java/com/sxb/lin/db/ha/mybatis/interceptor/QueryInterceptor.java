@@ -136,6 +136,7 @@ public class QueryInterceptor implements Interceptor{
 			}
 			
 			if(notSwitchWhenNoSlavesCount < readFromMasterWhenNoSlavesCount.intValue()){
+				logger.warn("please check all slaves,possible all slaves are dead.");
 				return;
 			}
 			
@@ -157,7 +158,12 @@ public class QueryInterceptor implements Interceptor{
 				if(!proxy.isSlavesConnection()){
 					proxy.setReadOnly(true);
 					if(!proxy.isSlavesConnection()){
-						readFromMasterWhenNoSlavesCount.incrementAndGet();
+						int incr = readFromMasterWhenNoSlavesCount.incrementAndGet();
+						if(incr == notSwitchWhenNoSlavesCount + 1){
+							logger.error("can not switch to slaves connection when read-only,possible all slaves are dead.");
+						}else{
+							logger.error("can not switch to slaves connection when read-only,please check all slaves.");
+						}
 					}
 				}
 			}
@@ -182,6 +188,7 @@ public class QueryInterceptor implements Interceptor{
 			if(invocationHandler instanceof ReplicationConnectionProxy){
 				ReplicationConnectionProxy proxy = (ReplicationConnectionProxy) invocationHandler;
 				if(proxy.isSlavesConnection()){
+					logger.warn("no slaves can use,every connection will switch to master connection.");
 					this.doSwitchToMasterConnection(proxy);
 				}
 			}
