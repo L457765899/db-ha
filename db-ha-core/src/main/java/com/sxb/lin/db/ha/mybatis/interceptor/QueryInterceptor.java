@@ -4,9 +4,15 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Properties;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.ibatis.executor.statement.BaseStatementHandler;
@@ -24,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.ReflectionUtils;
 
+import com.alibaba.druid.util.JdbcUtils;
 import com.mysql.jdbc.ReplicationConnectionProxy;
 
 @Intercepts({
@@ -39,13 +46,43 @@ public class QueryInterceptor implements Interceptor{
 	
 	protected Logger logger = LoggerFactory.getLogger(QueryInterceptor.class);
 	
-	private AtomicInteger readFromMasterWhenNoSlavesCount = new AtomicInteger(0);
+	private final AtomicInteger readFromMasterWhenNoSlavesCount = new AtomicInteger(0);
+	
+	private final AtomicBoolean needValidateSlaveStatus = new AtomicBoolean(true);
 	
 	private int notSwitchWhenNoSlavesCount = 30;
 	
 	private String today = this.getCurrentDayStr();
 	
 	private boolean noSlaves = false;
+	
+	private int initialDelay = 30;
+	
+	private int period = 60;
+	
+	private ScheduledExecutorService scheduledExecutorService = null;
+	
+	protected void init(){
+		this.destroy();
+		scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
+		scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
+			@Override
+			public void run() {
+				needValidateSlaveStatus.compareAndSet(false, true);
+			}
+		}, initialDelay, period, TimeUnit.SECONDS);
+	}
+	
+	protected void destroy(){
+		if(scheduledExecutorService != null){
+			if(scheduledExecutorService.isShutdown()){
+				scheduledExecutorService = null;
+			}else{
+				scheduledExecutorService.shutdown();
+				scheduledExecutorService = null;
+			}
+		}
+	}
 
 	@Override
 	public Object intercept(Invocation invocation) throws Throwable {
@@ -142,6 +179,7 @@ public class QueryInterceptor implements Interceptor{
 			
 			Connection connection = (Connection) invocation.getArgs()[0];
 			if(connection.isReadOnly()){
+				this.validateSlaveStatus(connection);
 				return;//second third fourth...... getConnection of the session when slave active
 			}
 			
@@ -164,6 +202,8 @@ public class QueryInterceptor implements Interceptor{
 						}else{
 							logger.error("can not switch to slaves connection when read-only,please check all slaves.");
 						}
+					}else{
+						this.validateSlaveStatus(connection);
 					}
 				}
 			}
@@ -173,8 +213,8 @@ public class QueryInterceptor implements Interceptor{
 	}
 	
 	protected void switchToMasterConnectionWhenNoSlaves(Invocation invocation) throws Exception {
+		Connection connection = (Connection) invocation.getArgs()[0];
 		if(noSlaves){
-			Connection connection = (Connection) invocation.getArgs()[0];
 			if(!connection.isReadOnly()){
 				return;//JtaTransactionManager not support read-only transaction
 			}
@@ -192,6 +232,8 @@ public class QueryInterceptor implements Interceptor{
 					this.doSwitchToMasterConnection(proxy);
 				}
 			}
+		}else{
+			this.validateSlaveStatus(connection);
 		}
 	}
 	
@@ -207,6 +249,29 @@ public class QueryInterceptor implements Interceptor{
 		masterConnection.setTransactionIsolation(currentConnection.getTransactionIsolation());
 		masterConnection.setSessionMaxRows(currentConnection.getSessionMaxRows());
 		currentConnectionField.set(proxy, masterConnection);
+	}
+	
+	protected void validateSlaveStatus(Connection connection){
+		if(needValidateSlaveStatus.compareAndSet(true, false)){
+			Statement stmt = null;
+            ResultSet rs = null;
+            try {
+                stmt = connection.createStatement();
+                rs = stmt.executeQuery("show slave status");
+                if(rs.next()){
+                	String Slave_IO_Running = rs.getString("Slave_IO_Running");
+                	String Slave_SQL_Running = rs.getString("Slave_SQL_Running");
+                	if( !(Slave_IO_Running.equals("Yes") && Slave_SQL_Running.equals("Yes")) ){
+                		this.setNoSlaves(true);
+                	}
+                }
+            } catch(Throwable e) {
+            	logger.info(e.getMessage(),e);
+            } finally {
+                JdbcUtils.close(rs);
+                JdbcUtils.close(stmt);
+            }
+		}
 	}
 	
 	public String getCurrentDayStr() {
@@ -229,6 +294,11 @@ public class QueryInterceptor implements Interceptor{
 
 	public void setNoSlaves(boolean noSlaves) {
 		this.noSlaves = noSlaves;
+		if(noSlaves){
+			this.destroy();
+		}else{
+			this.init();
+		}
 	}
 	
 }
