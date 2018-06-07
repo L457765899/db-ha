@@ -5,6 +5,7 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -13,7 +14,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.ibatis.executor.statement.BaseStatementHandler;
 import org.apache.ibatis.executor.statement.RoutingStatementHandler;
@@ -47,13 +47,9 @@ public class QueryInterceptor implements Interceptor{
 	
 	protected Logger logger = LoggerFactory.getLogger(QueryInterceptor.class);
 	
-	private final AtomicInteger readFromMasterWhenNoSlavesCount = new AtomicInteger(0);
-	
 	private final AtomicBoolean needValidateSlaveStatus = new AtomicBoolean(true);
 	
 	private int notSwitchWhenNoSlavesCount = 30;
-	
-	private String today = this.getCurrentDayStr();
 	
 	private boolean noSlaves = false;
 	
@@ -162,6 +158,18 @@ public class QueryInterceptor implements Interceptor{
 		return boundSql;
 	}*/
 	
+	protected ReplicationConnectionProxy getProxy(Connection connection) throws SQLException{
+		Connection unwrap = connection.unwrap(Connection.class);
+		if(Proxy.isProxyClass(unwrap.getClass())){
+			InvocationHandler invocationHandler = Proxy.getInvocationHandler(unwrap);
+			if(invocationHandler instanceof ReplicationConnectionProxy){
+				ReplicationConnectionProxy proxy = (ReplicationConnectionProxy) invocationHandler;
+				return proxy;
+			}
+		}
+		return null;	
+	}
+	
 	protected void switchToSlavesConnectionWhenReadOnly(Invocation invocation) throws Exception {
 		
 		MappedStatement mappedStatement = this.getMappedStatement(invocation);
@@ -169,45 +177,25 @@ public class QueryInterceptor implements Interceptor{
 		
 		if(sqlCommandType == SqlCommandType.SELECT && !noSlaves){
 			
-			String currentDay = this.getCurrentDayStr();
-			if(!today.equals(currentDay)){
-				readFromMasterWhenNoSlavesCount.set(0);
-				today = currentDay;
-			}
-			
-			if(notSwitchWhenNoSlavesCount < readFromMasterWhenNoSlavesCount.intValue()){
-				logger.warn("please check all slaves,possible all slaves are dead.");
+			Connection connection = (Connection) invocation.getArgs()[0];
+			ReplicationConnectionProxy proxy = this.getProxy(connection);
+			if(proxy == null){
 				return;
 			}
 			
-			Connection connection = (Connection) invocation.getArgs()[0];
 			if(connection.isReadOnly()){
-				this.validateSlaveStatus(connection);
-				return;//second third fourth...... getConnection of the session when slave active = have TransactionDefinition no transaction
+				this.validateSlaveStatus(connection,proxy);
+				return;//have TransactionDefinition no transaction,second third fourth...... getConnection of the session when slave active
 			}
 			
 			//first getConnection of the session when slave active
-			Connection unwrap = connection.unwrap(Connection.class);
-			if(!Proxy.isProxyClass(unwrap.getClass())){
-				return;
-			}
-			
-			//avoid readOnly=true is master connection
-			InvocationHandler invocationHandler = Proxy.getInvocationHandler(unwrap);
-			if(invocationHandler instanceof ReplicationConnectionProxy){
-				ReplicationConnectionProxy proxy = (ReplicationConnectionProxy) invocationHandler;
+			if(!proxy.isSlavesConnection()){
+				connection.setReadOnly(true);
+				//readOnly=true is master connection
 				if(!proxy.isSlavesConnection()){
-					connection.setReadOnly(true);
-					if(!proxy.isSlavesConnection()){
-						int incr = readFromMasterWhenNoSlavesCount.incrementAndGet();
-						if(incr == notSwitchWhenNoSlavesCount + 1){
-							logger.error("can not switch to slaves connection when read-only,possible all slaves are dead.");
-						}else{
-							logger.error("can not switch to slaves connection when read-only,please check all slaves.");
-						}
-					}else{
-						this.validateSlaveStatus(connection);
-					}
+					logger.error("can not switch to slaves connection when read-only,possible all slaves are dead.");
+				}else{
+					this.validateSlaveStatus(connection,proxy);
 				}
 			}
 			
@@ -222,21 +210,17 @@ public class QueryInterceptor implements Interceptor{
 				return;//JtaTransactionManager not support read-only transaction
 			}
 			
-			Connection unwrap = connection.unwrap(Connection.class);
-			if(!Proxy.isProxyClass(unwrap.getClass())){
+			ReplicationConnectionProxy proxy = this.getProxy(connection);
+			if(proxy == null){
 				return;
 			}
 			
-			InvocationHandler invocationHandler = Proxy.getInvocationHandler(unwrap);
-			if(invocationHandler instanceof ReplicationConnectionProxy){
-				ReplicationConnectionProxy proxy = (ReplicationConnectionProxy) invocationHandler;
-				if(proxy.isSlavesConnection()){
-					logger.warn("no slaves can use,every connection will switch to master connection.");
-					this.doSwitchToMasterConnection(proxy);
-				}
+			if(proxy.isSlavesConnection()){
+				logger.warn("no slaves can use,every connection will switch to master connection.");
+				this.doSwitchToMasterConnection(proxy);
 			}
 		}else{
-			this.validateSlaveStatus(connection);
+			this.validateSlaveStatus(connection,null);
 		}
 	}
 	
@@ -254,8 +238,15 @@ public class QueryInterceptor implements Interceptor{
 		currentConnectionField.set(proxy, masterConnection);
 	}
 	
-	protected void validateSlaveStatus(Connection connection){
-		if(needValidateSlaveStatus.compareAndSet(true, false)){
+	protected void validateSlaveStatus(Connection connection,ReplicationConnectionProxy proxy) throws SQLException{
+		if(proxy == null){
+			proxy = this.getProxy(connection);
+			if(proxy == null){
+				return;
+			}
+		}
+		
+		if(proxy.isSlavesConnection() && needValidateSlaveStatus.compareAndSet(true, false)){
 			Statement stmt = null;
             ResultSet rs = null;
             try {
