@@ -12,7 +12,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.sxb.lin.trx.db.dao.UserMapper;
-import com.sxb.lin.trx.db.model.Quote;
 import com.sxb.lin.trx.db.model.User;
 import com.sxb.lin.trx.service.QuoteService;
 import com.sxb.lin.trx.service.UserService;
@@ -62,7 +61,8 @@ public class UserServiceImpl implements UserService {
 	 */
 	@Override
 	public Map<String, Object> getUser() {
-		User user = userMapper.selectByPrimaryKey(1);
+		User user = userMapper.selectByPrimaryKey(16);
+		user = userMapper.selectByPrimaryKey(1);
 		return RetUtil.getRetValue(user);
 	}
 
@@ -72,7 +72,8 @@ public class UserServiceImpl implements UserService {
 	@Override
 	//@Transactional(propagation=Propagation.SUPPORTS)
 	public Map<String, Object> takeUser() {
-		User user = userMapper.selectByPrimaryKey(1);
+		User user = userMapper.selectByPrimaryKey(16);
+		user = userMapper.selectByPrimaryKey(1);
 		//Quote quote = quoteService.trQuote();
 		//Object[] arrays = {user,quote};
 		//return RetUtil.getRetValue(arrays);

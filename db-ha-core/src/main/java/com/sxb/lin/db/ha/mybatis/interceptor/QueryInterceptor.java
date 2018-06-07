@@ -38,7 +38,8 @@ import com.mysql.jdbc.ReplicationConnectionProxy;
 		method = "prepare", 
 		type = StatementHandler.class, 
 		args = {  
-			Connection.class
+			Connection.class,
+			Integer.class
 		}
 	)
 })
@@ -56,7 +57,7 @@ public class QueryInterceptor implements Interceptor{
 	
 	private boolean noSlaves = false;
 	
-	private int initialDelay = 30;
+	private int initialDelay = 10;
 	
 	private int period = 60;
 	
@@ -68,9 +69,11 @@ public class QueryInterceptor implements Interceptor{
 		scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 			@Override
 			public void run() {
+				//logger.info("compare and set needValidateSlaveStatus.");
 				needValidateSlaveStatus.compareAndSet(false, true);
 			}
 		}, initialDelay, period, TimeUnit.SECONDS);
+		logger.info("QueryInterceptor have start.");
 	}
 	
 	protected void destroy(){
@@ -180,7 +183,7 @@ public class QueryInterceptor implements Interceptor{
 			Connection connection = (Connection) invocation.getArgs()[0];
 			if(connection.isReadOnly()){
 				this.validateSlaveStatus(connection);
-				return;//second third fourth...... getConnection of the session when slave active
+				return;//second third fourth...... getConnection of the session when slave active = have TransactionDefinition no transaction
 			}
 			
 			//first getConnection of the session when slave active
@@ -194,7 +197,7 @@ public class QueryInterceptor implements Interceptor{
 			if(invocationHandler instanceof ReplicationConnectionProxy){
 				ReplicationConnectionProxy proxy = (ReplicationConnectionProxy) invocationHandler;
 				if(!proxy.isSlavesConnection()){
-					proxy.setReadOnly(true);
+					connection.setReadOnly(true);
 					if(!proxy.isSlavesConnection()){
 						int incr = readFromMasterWhenNoSlavesCount.incrementAndGet();
 						if(incr == notSwitchWhenNoSlavesCount + 1){
@@ -256,15 +259,22 @@ public class QueryInterceptor implements Interceptor{
 			Statement stmt = null;
             ResultSet rs = null;
             try {
+            	String io = "",sql="";
+            	long startTime = System.currentTimeMillis();
                 stmt = connection.createStatement();
                 rs = stmt.executeQuery("show slave status");
                 if(rs.next()){
                 	String Slave_IO_Running = rs.getString("Slave_IO_Running");
                 	String Slave_SQL_Running = rs.getString("Slave_SQL_Running");
-                	if( !(Slave_IO_Running.equals("Yes") && Slave_SQL_Running.equals("Yes")) ){
+                	if(Slave_IO_Running.equals("No") || Slave_SQL_Running.equals("No")){
                 		this.setNoSlaves(true);
                 	}
+                	io += Slave_IO_Running;
+                	sql += Slave_SQL_Running;
                 }
+                long endTime = System.currentTimeMillis();
+            	long time = endTime - startTime;
+            	logger.info("{Slave_IO_Running:"+io+",Slave_SQL_Running:"+sql+",time:"+time+"}");
             } catch(Throwable e) {
             	logger.info(e.getMessage(),e);
             } finally {
@@ -295,6 +305,7 @@ public class QueryInterceptor implements Interceptor{
 	public void setNoSlaves(boolean noSlaves) {
 		this.noSlaves = noSlaves;
 		if(noSlaves){
+			logger.error("all slave are replicate failed,set all slave unavailable.");
 			this.destroy();
 		}else{
 			this.init();
