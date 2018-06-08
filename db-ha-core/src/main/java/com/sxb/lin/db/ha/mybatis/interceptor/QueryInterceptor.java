@@ -27,11 +27,13 @@ import org.apache.ibatis.plugin.Plugin;
 import org.apache.ibatis.plugin.Signature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.ReflectionUtils;
 
 import com.alibaba.druid.util.JdbcUtils;
 import com.mysql.jdbc.ReplicationConnectionProxy;
+import com.sxb.lin.db.ha.slave.SlaveQuerier;
 
 @Intercepts({
 	@Signature(
@@ -45,22 +47,24 @@ import com.mysql.jdbc.ReplicationConnectionProxy;
 })
 public class QueryInterceptor implements Interceptor{
 	
-	protected Logger logger = LoggerFactory.getLogger(QueryInterceptor.class);
+	private final static Logger logger = LoggerFactory.getLogger(QueryInterceptor.class);
 	
-	private final AtomicBoolean needValidateSlaveStatus = new AtomicBoolean(true);
+	private final static AtomicBoolean needValidateSlaveStatus = new AtomicBoolean(true);
 	
 	private int notSwitchWhenNoSlavesCount = 30;
 	
+	@Value("${spring.db.ha.noSlaves:false}")
 	private boolean noSlaves = false;
 	
 	private int initialDelay = 10;
 	
 	private int period = 60;
 	
+	private SlaveQuerier slaveQuerier;
+	
 	private ScheduledExecutorService scheduledExecutorService = null;
 	
 	protected void init(){
-		this.destroy();
 		scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
 		scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 			@Override
@@ -175,13 +179,21 @@ public class QueryInterceptor implements Interceptor{
 		MappedStatement mappedStatement = this.getMappedStatement(invocation);
 		SqlCommandType sqlCommandType = mappedStatement.getSqlCommandType();
 		
-		if(sqlCommandType == SqlCommandType.SELECT && !noSlaves){
+		if(sqlCommandType != SqlCommandType.SELECT){
+			return;
+		}
+		
+		Connection connection = (Connection) invocation.getArgs()[0];
+		ReplicationConnectionProxy proxy = this.getProxy(connection);
+		if(proxy == null){
+			return;
+		}
+		
+		if(noSlaves){
 			
-			Connection connection = (Connection) invocation.getArgs()[0];
-			ReplicationConnectionProxy proxy = this.getProxy(connection);
-			if(proxy == null){
-				return;
-			}
+			this.validateSlaveIsAlreadyFixed();
+			
+		}else{
 			
 			if(connection.isReadOnly()){
 				this.validateSlaveStatus(connection,proxy);
@@ -219,6 +231,8 @@ public class QueryInterceptor implements Interceptor{
 				logger.warn("no slaves can use,every connection will switch to master connection.");
 				this.doSwitchToMasterConnection(proxy);
 			}
+			
+			this.validateSlaveIsAlreadyFixed();
 		}else{
 			this.validateSlaveStatus(connection,null);
 		}
@@ -254,7 +268,7 @@ public class QueryInterceptor implements Interceptor{
             	long startTime = System.currentTimeMillis();
                 stmt = connection.createStatement();
                 rs = stmt.executeQuery("show slave status");
-                if(rs.next()){
+                while(rs.next()){
                 	String Slave_IO_Running = rs.getString("Slave_IO_Running");
                 	String Slave_SQL_Running = rs.getString("Slave_SQL_Running");
                 	if(Slave_IO_Running.equals("No") || Slave_SQL_Running.equals("No")){
@@ -272,6 +286,14 @@ public class QueryInterceptor implements Interceptor{
                 JdbcUtils.close(rs);
                 JdbcUtils.close(stmt);
             }
+		}
+	}
+	
+	protected void validateSlaveIsAlreadyFixed(){
+		if(slaveQuerier != null && needValidateSlaveStatus.compareAndSet(true, false)){
+			if(slaveQuerier.isAlreadyFixedReplicate()){
+				this.setNoSlaves(false);
+			}
 		}
 	}
 	
@@ -297,10 +319,33 @@ public class QueryInterceptor implements Interceptor{
 		this.noSlaves = noSlaves;
 		if(noSlaves){
 			logger.error("all slave are replicate failed,set all slave unavailable.");
-			this.destroy();
 		}else{
-			this.init();
+			logger.info("all slave's replicate are already fixed,set all slave available.");
 		}
+	}
+
+	public int getInitialDelay() {
+		return initialDelay;
+	}
+
+	public void setInitialDelay(int initialDelay) {
+		this.initialDelay = initialDelay;
+	}
+
+	public int getPeriod() {
+		return period;
+	}
+
+	public void setPeriod(int period) {
+		this.period = period;
+	}
+
+	public SlaveQuerier getSlaveQuerier() {
+		return slaveQuerier;
+	}
+
+	public void setSlaveQuerier(SlaveQuerier slaveQuerier) {
+		this.slaveQuerier = slaveQuerier;
 	}
 	
 }

@@ -27,17 +27,25 @@ import org.springframework.web.multipart.MultipartResolver;
 import org.springframework.web.multipart.commons.CommonsMultipartResolver;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurerAdapter;
 
+import redis.clients.jedis.JedisCluster;
+
 import com.alibaba.druid.support.http.StatViewServlet;
 import com.sxb.lin.db.ha.mybatis.interceptor.QueryInterceptor;
 import com.sxb.lin.db.ha.mybatis.transaction.HASpringManagedTransactionFactory;
+import com.sxb.lin.db.ha.slave.SlaveQuerier;
+import com.sxb.lin.db.ha.slave.SlaveRedisQuerier;
 
 @MapperScan("com.sxb.lin.trx.db.dao")
 @Configuration
-public class Config extends WebMvcConfigurerAdapter{
+public class HaConfig extends WebMvcConfigurerAdapter{
 	
+	@Autowired
 	@Bean(initMethod="init",destroyMethod="destroy")
-	public Interceptor queryInterceptor(){
-		return new QueryInterceptor();
+	public Interceptor queryInterceptor(JedisCluster jedisCluster){
+		SlaveQuerier slaveQuerier = new SlaveRedisQuerier(jedisCluster);
+		QueryInterceptor queryInterceptor = new QueryInterceptor();
+		queryInterceptor.setSlaveQuerier(slaveQuerier);
+		return queryInterceptor;
 	}
 	
 	@Bean
