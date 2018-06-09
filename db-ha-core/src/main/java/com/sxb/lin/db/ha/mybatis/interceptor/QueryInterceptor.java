@@ -423,5 +423,14 @@ public class QueryInterceptor implements Interceptor{
 	public void setSlaveQuerier(SlaveQuerier slaveQuerier) {
 		this.slaveQuerier = slaveQuerier;
 	}
+
+	public PropagationBehaviorSupport getPropagationBehaviorSupport() {
+		return propagationBehaviorSupport;
+	}
+
+	public void setPropagationBehaviorSupport(
+			PropagationBehaviorSupport propagationBehaviorSupport) {
+		this.propagationBehaviorSupport = propagationBehaviorSupport;
+	}
 	
 }
