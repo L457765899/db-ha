@@ -7,8 +7,6 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
 import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -28,12 +26,17 @@ import org.apache.ibatis.plugin.Signature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.interceptor.TransactionAttribute;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.ReflectionUtils;
 
 import com.alibaba.druid.util.JdbcUtils;
 import com.mysql.jdbc.ReplicationConnectionProxy;
 import com.sxb.lin.db.ha.slave.SlaveQuerier;
+import com.sxb.lin.db.ha.transaction.MixQueryAndUpdateSqlException;
+import com.sxb.lin.db.ha.transaction.PropagationBehaviorSupport;
+import com.sxb.lin.db.ha.transaction.TransactionAttributeInfo;
 
 @Intercepts({
 	@Signature(
@@ -62,6 +65,8 @@ public class QueryInterceptor implements Interceptor{
 	
 	private SlaveQuerier slaveQuerier;
 	
+	private PropagationBehaviorSupport propagationBehaviorSupport;
+	
 	private ScheduledExecutorService scheduledExecutorService = null;
 	
 	protected void init(){
@@ -89,6 +94,8 @@ public class QueryInterceptor implements Interceptor{
 
 	@Override
 	public Object intercept(Invocation invocation) throws Throwable {
+		
+		this.synchronization();
 		
 		if(!TransactionSynchronizationManager.isSynchronizationActive()){
 			this.switchToSlavesConnectionWhenReadOnly(invocation);//no TransactionDefinition no transaction
@@ -180,7 +187,10 @@ public class QueryInterceptor implements Interceptor{
 		SqlCommandType sqlCommandType = mappedStatement.getSqlCommandType();
 		
 		if(sqlCommandType != SqlCommandType.SELECT){
+			this.executeUpdate();
 			return;
+		}else{
+			this.executeQuery();
 		}
 		
 		Connection connection = (Connection) invocation.getArgs()[0];
@@ -194,6 +204,10 @@ public class QueryInterceptor implements Interceptor{
 			this.validateSlaveIsAlreadyFixed();
 			
 		}else{
+			
+			if(this.validatePropagationIsNever()){
+				return;
+			}
 			
 			if(connection.isReadOnly()){
 				this.validateSlaveStatus(connection,proxy);
@@ -238,7 +252,7 @@ public class QueryInterceptor implements Interceptor{
 		}
 	}
 	
-	protected void doSwitchToMasterConnection(ReplicationConnectionProxy proxy) throws Exception {
+	private void doSwitchToMasterConnection(ReplicationConnectionProxy proxy) throws Exception {
 		Field currentConnectionField = ReflectionUtils.findField(ReplicationConnectionProxy.class, "currentConnection");
 		currentConnectionField.setAccessible(true);
 		com.mysql.jdbc.Connection currentConnection = (com.mysql.jdbc.Connection)currentConnectionField.get(proxy);
@@ -252,7 +266,7 @@ public class QueryInterceptor implements Interceptor{
 		currentConnectionField.set(proxy, masterConnection);
 	}
 	
-	protected void validateSlaveStatus(Connection connection,ReplicationConnectionProxy proxy) throws SQLException{
+	private void validateSlaveStatus(Connection connection,ReplicationConnectionProxy proxy) throws SQLException{
 		if(proxy == null){
 			proxy = this.getProxy(connection);
 			if(proxy == null){
@@ -289,7 +303,7 @@ public class QueryInterceptor implements Interceptor{
 		}
 	}
 	
-	protected void validateSlaveIsAlreadyFixed(){
+	private void validateSlaveIsAlreadyFixed(){
 		if(slaveQuerier != null && needValidateSlaveStatus.compareAndSet(true, false)){
 			if(slaveQuerier.isAlreadyFixedReplicate()){
 				this.setNoSlaves(false);
@@ -297,11 +311,73 @@ public class QueryInterceptor implements Interceptor{
 		}
 	}
 	
-	public String getCurrentDayStr() {
-        SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd");
-        Calendar c = Calendar.getInstance();
-        return f.format(c.getTime());
-    }
+	private boolean validatePropagationIsNever(){
+		if(propagationBehaviorSupport == null){
+			return false;
+		}
+		TransactionAttributeInfo transactionAttributeInfo = PropagationBehaviorSupport.get();
+		if(transactionAttributeInfo == null){
+			return false;
+		}
+		TransactionAttribute transactionAttribute = transactionAttributeInfo.getTransactionAttribute();
+		if(transactionAttribute.getPropagationBehavior() == TransactionDefinition.PROPAGATION_NEVER){
+			return true;
+		}
+		return false;
+	}
+	
+	private void validateIsExecuteQuery() throws MixQueryAndUpdateSqlException{
+		Boolean executeUpdate = PropagationBehaviorSupport.isExecuteUpdate();
+		if(executeUpdate != null && !executeUpdate){
+			String msg = "in the case of read-write separation,"
+					+ "do not mix query sql and update sql when there are no transactions,"
+					+ "this may lead to inconsistent data,"
+					+ "you should set the transaction or set propagation behavior is PROPAGATION_NEVER.";
+			throw new MixQueryAndUpdateSqlException(msg);
+		}
+	}
+	
+	private void validateIsExecuteUpdate() throws MixQueryAndUpdateSqlException{
+		Boolean executeUpdate = PropagationBehaviorSupport.isExecuteUpdate();
+		if(executeUpdate != null && executeUpdate){
+			String msg = "in the case of read-write separation,"
+					+ "do not mix query sql and update sql when there are no transactions,"
+					+ "this may lead to inconsistent data,"
+					+ "you should set the transaction or set propagation behavior is PROPAGATION_NEVER.";
+			throw new MixQueryAndUpdateSqlException(msg);
+		}
+	}
+	
+	private void executeQuery(){
+		if(propagationBehaviorSupport != null){
+			try {
+				this.validateIsExecuteUpdate();
+			} catch (MixQueryAndUpdateSqlException e) {
+				logger.warn(e.getMessage(), e);
+			}
+			PropagationBehaviorSupport.executeQuery();
+		}
+	}
+	
+	private void executeUpdate(){
+		if(propagationBehaviorSupport != null){
+			try {
+				this.validateIsExecuteQuery();
+			} catch (MixQueryAndUpdateSqlException e) {
+				logger.warn(e.getMessage(), e);
+			}
+			PropagationBehaviorSupport.executeUpdate();
+		}
+	}
+	
+	private void synchronization(){
+		if(propagationBehaviorSupport != null && TransactionSynchronizationManager.isSynchronizationActive()){
+			Boolean executeUpdate = PropagationBehaviorSupport.isExecuteUpdate();
+			if(executeUpdate == null && propagationBehaviorSupport.isNewSynchronization()){
+				propagationBehaviorSupport.registerSynchronization();
+			}
+		}
+	}
 
 	public int getNotSwitchWhenNoSlavesCount() {
 		return notSwitchWhenNoSlavesCount;
