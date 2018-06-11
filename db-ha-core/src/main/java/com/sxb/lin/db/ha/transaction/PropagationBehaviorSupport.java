@@ -10,8 +10,6 @@ public class PropagationBehaviorSupport {
 	
 	private final static ThreadLocal<TransactionAttributeInfo> TRANSACTION_ATTRIBUTE_INFO = new ThreadLocal<>();
 	
-	private final static ThreadLocal<Boolean> IS_EXECUTE_UPDATE = new ThreadLocal<>();
-	
 	public static TransactionAttributeInfo get(){
 		return TRANSACTION_ATTRIBUTE_INFO.get();
 	}
@@ -20,21 +18,26 @@ public class PropagationBehaviorSupport {
 		TRANSACTION_ATTRIBUTE_INFO.set(transactionAttributeInfo);
 	}
 	
-	public static void clear(){
-		TRANSACTION_ATTRIBUTE_INFO.remove();
-		IS_EXECUTE_UPDATE.remove();
-	}
-	
 	public static Boolean isExecuteUpdate(){
-		return IS_EXECUTE_UPDATE.get();
+		TransactionAttributeInfo transactionAttributeInfo = TRANSACTION_ATTRIBUTE_INFO.get();
+		if(transactionAttributeInfo == null){
+			return null;
+		}
+		return transactionAttributeInfo.getIsExecuteUpdate();
 	}
 	
 	public static void executeQuery(){
-		IS_EXECUTE_UPDATE.set(false);
+		TransactionAttributeInfo transactionAttributeInfo = TRANSACTION_ATTRIBUTE_INFO.get();
+		if(transactionAttributeInfo != null){
+			transactionAttributeInfo.setIsExecuteUpdate(false);
+		}
 	}
 	
 	public static void executeUpdate(){
-		IS_EXECUTE_UPDATE.set(true);
+		TransactionAttributeInfo transactionAttributeInfo = TRANSACTION_ATTRIBUTE_INFO.get();
+		if(transactionAttributeInfo != null){
+			transactionAttributeInfo.setIsExecuteUpdate(true);
+		}
 	}
 	
 	private TransactionInterceptor transactionInterceptor;

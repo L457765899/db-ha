@@ -6,7 +6,10 @@ public class TransactionAttributeInfoSynchronization extends TransactionSynchron
 
 	@Override
 	public void afterCompletion(int status) {
-		PropagationBehaviorSupport.clear();
+		TransactionAttributeInfo transactionAttributeInfo = PropagationBehaviorSupport.get();
+		if(transactionAttributeInfo != null){
+			transactionAttributeInfo.restoreThreadLocalStatus();
+		}
 	}
 	
 }

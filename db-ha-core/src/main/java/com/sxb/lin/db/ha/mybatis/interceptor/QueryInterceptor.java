@@ -185,12 +185,13 @@ public class QueryInterceptor implements Interceptor{
 		
 		MappedStatement mappedStatement = this.getMappedStatement(invocation);
 		SqlCommandType sqlCommandType = mappedStatement.getSqlCommandType();
+		boolean validatePropagationIsNever = this.validatePropagationIsNever();
 		
 		if(sqlCommandType != SqlCommandType.SELECT){
-			this.executeUpdate();
+			this.executeUpdate(validatePropagationIsNever);
 			return;
 		}else{
-			this.executeQuery();
+			this.executeQuery(validatePropagationIsNever);
 		}
 		
 		Connection connection = (Connection) invocation.getArgs()[0];
@@ -205,7 +206,7 @@ public class QueryInterceptor implements Interceptor{
 			
 		}else{
 			
-			if(this.validatePropagationIsNever()){
+			if(validatePropagationIsNever){
 				return;
 			}
 			
@@ -348,23 +349,27 @@ public class QueryInterceptor implements Interceptor{
 		}
 	}
 	
-	private void executeQuery(){
+	private void executeQuery(boolean validatePropagationIsNever){
 		if(propagationBehaviorSupport != null){
 			try {
 				this.validateIsExecuteUpdate();
 			} catch (MixQueryAndUpdateSqlException e) {
-				logger.warn(e.getMessage(), e);
+				if(!validatePropagationIsNever){
+					logger.warn(e.getMessage(), e);
+				}
 			}
 			PropagationBehaviorSupport.executeQuery();
 		}
 	}
 	
-	private void executeUpdate(){
+	private void executeUpdate(boolean validatePropagationIsNever){
 		if(propagationBehaviorSupport != null){
 			try {
 				this.validateIsExecuteQuery();
 			} catch (MixQueryAndUpdateSqlException e) {
-				logger.warn(e.getMessage(), e);
+				if(!validatePropagationIsNever){
+					logger.warn(e.getMessage(), e);
+				}
 			}
 			PropagationBehaviorSupport.executeUpdate();
 		}

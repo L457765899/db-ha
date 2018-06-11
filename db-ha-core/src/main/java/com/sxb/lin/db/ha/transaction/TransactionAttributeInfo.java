@@ -11,6 +11,10 @@ public class TransactionAttributeInfo {
 	private Class<?> targetClass;
 	
 	private TransactionAttribute transactionAttribute;
+	
+	private Boolean isExecuteUpdate;
+	
+	private TransactionAttributeInfo oldTransactionAttributeInfo;
 
 	public Method getMethod() {
 		return method;
@@ -36,5 +40,20 @@ public class TransactionAttributeInfo {
 		this.transactionAttribute = transactionAttribute;
 	}
 	
+	public Boolean getIsExecuteUpdate() {
+		return isExecuteUpdate;
+	}
+
+	public void setIsExecuteUpdate(Boolean isExecuteUpdate) {
+		this.isExecuteUpdate = isExecuteUpdate;
+	}
 	
+	public void bindToThread() {
+		this.oldTransactionAttributeInfo = PropagationBehaviorSupport.get();
+		PropagationBehaviorSupport.set(this);
+	}
+	
+	public void restoreThreadLocalStatus() {
+		PropagationBehaviorSupport.set(this.oldTransactionAttributeInfo);
+	}
 }
