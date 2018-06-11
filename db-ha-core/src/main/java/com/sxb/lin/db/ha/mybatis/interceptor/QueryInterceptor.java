@@ -26,17 +26,12 @@ import org.apache.ibatis.plugin.Signature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.interceptor.TransactionAttribute;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.ReflectionUtils;
 
 import com.alibaba.druid.util.JdbcUtils;
 import com.mysql.jdbc.ReplicationConnectionProxy;
 import com.sxb.lin.db.ha.slave.SlaveQuerier;
-import com.sxb.lin.db.ha.transaction.MixQueryAndUpdateSqlException;
-import com.sxb.lin.db.ha.transaction.PropagationBehaviorSupport;
-import com.sxb.lin.db.ha.transaction.TransactionAttributeInfo;
 
 @Intercepts({
 	@Signature(
@@ -64,8 +59,6 @@ public class QueryInterceptor implements Interceptor{
 	private int period = 60;
 	
 	private SlaveQuerier slaveQuerier;
-	
-	private PropagationBehaviorSupport propagationBehaviorSupport;
 	
 	private ScheduledExecutorService scheduledExecutorService = null;
 	
@@ -95,12 +88,10 @@ public class QueryInterceptor implements Interceptor{
 	@Override
 	public Object intercept(Invocation invocation) throws Throwable {
 		
-		this.synchronization();
-		
 		if(!TransactionSynchronizationManager.isSynchronizationActive()){
-			this.switchToSlavesConnectionWhenReadOnly(invocation);//no TransactionDefinition no transaction
+			this.switchToSlavesConnectionWhenReadOnly(invocation,false);//no TransactionDefinition no transaction
 		}else if(!TransactionSynchronizationManager.isActualTransactionActive()){
-			this.switchToSlavesConnectionWhenReadOnly(invocation);//have TransactionDefinition no transaction
+			this.switchToSlavesConnectionWhenReadOnly(invocation,true);//have TransactionDefinition no transaction
 		}else if(TransactionSynchronizationManager.isCurrentTransactionReadOnly()){
 			//JtaTransactionManager not support read-only transaction
 			//DataSourceTransactionManager support read-only transaction
@@ -181,17 +172,32 @@ public class QueryInterceptor implements Interceptor{
 		return null;	
 	}
 	
-	protected void switchToSlavesConnectionWhenReadOnly(Invocation invocation) throws Exception {
+	protected void switchToSlavesConnectionWhenReadOnly(Invocation invocation,
+			boolean isHaveTransactionDefinition) throws Exception {
 		
 		MappedStatement mappedStatement = this.getMappedStatement(invocation);
 		SqlCommandType sqlCommandType = mappedStatement.getSqlCommandType();
-		boolean validatePropagationIsNever = this.validatePropagationIsNever();
 		
 		if(sqlCommandType != SqlCommandType.SELECT){
-			this.executeUpdate(validatePropagationIsNever);
+			if(!isHaveTransactionDefinition){
+				try {
+					this.notAllowedUpdateWithNoTransactionDefinition(mappedStatement);
+				} catch (NotAllowedUpdateException e) {
+					logger.warn(e.getMessage(),e);
+				}
+			}else if(TransactionSynchronizationManager.isCurrentTransactionReadOnly()){
+				try {
+					this.notAllowedUpdateWithReadOnly(mappedStatement);
+				} catch (NotAllowedUpdateException e) {
+					logger.warn(e.getMessage(),e);
+				}
+			}
 			return;
-		}else{
-			this.executeQuery(validatePropagationIsNever);
+		}
+		
+		if(!TransactionSynchronizationManager.isCurrentTransactionReadOnly() 
+				&& isHaveTransactionDefinition){
+			return;
 		}
 		
 		Connection connection = (Connection) invocation.getArgs()[0];
@@ -205,10 +211,6 @@ public class QueryInterceptor implements Interceptor{
 			this.validateSlaveIsAlreadyFixed();
 			
 		}else{
-			
-			if(validatePropagationIsNever){
-				return;
-			}
 			
 			if(connection.isReadOnly()){
 				this.validateSlaveStatus(connection,proxy);
@@ -312,78 +314,18 @@ public class QueryInterceptor implements Interceptor{
 		}
 	}
 	
-	private boolean validatePropagationIsNever(){
-		if(propagationBehaviorSupport == null){
-			return false;
-		}
-		TransactionAttributeInfo transactionAttributeInfo = PropagationBehaviorSupport.get();
-		if(transactionAttributeInfo == null){
-			return false;
-		}
-		TransactionAttribute transactionAttribute = transactionAttributeInfo.getTransactionAttribute();
-		if(transactionAttribute.getPropagationBehavior() == TransactionDefinition.PROPAGATION_NEVER){
-			return true;
-		}
-		return false;
+	private void notAllowedUpdateWithNoTransactionDefinition(MappedStatement mappedStatement) throws NotAllowedUpdateException{
+		String msg = mappedStatement.getId()+" is not allowed,because it in a no transaction definition service's method."
+				+ "please set the service's method use transaction or set the propagation is SUPPORTS(NOT_SUPPORTED,NEVER) and readOnly is false.";
+		throw new NotAllowedUpdateException(msg);
 	}
 	
-	private void validateIsExecuteQuery() throws MixQueryAndUpdateSqlException{
-		Boolean executeUpdate = PropagationBehaviorSupport.isExecuteUpdate();
-		if(executeUpdate != null && !executeUpdate){
-			String msg = "in the case of read-write separation,"
-					+ "do not mix query sql and update sql when there are no transactions,"
-					+ "this may lead to inconsistent data,"
-					+ "you should set the transaction or set propagation behavior is PROPAGATION_NEVER.";
-			throw new MixQueryAndUpdateSqlException(msg);
-		}
+	private void notAllowedUpdateWithReadOnly(MappedStatement mappedStatement) throws NotAllowedUpdateException{
+		String msg = mappedStatement.getId()+" is not allowed,because it in a read only service's method."
+				+ "please set the service's method use transaction or set the propagation is PROPAGATION_SUPPORTS and readOnly is false.";
+		throw new NotAllowedUpdateException(msg);
 	}
 	
-	private void validateIsExecuteUpdate() throws MixQueryAndUpdateSqlException{
-		Boolean executeUpdate = PropagationBehaviorSupport.isExecuteUpdate();
-		if(executeUpdate != null && executeUpdate){
-			String msg = "in the case of read-write separation,"
-					+ "do not mix query sql and update sql when there are no transactions,"
-					+ "this may lead to inconsistent data,"
-					+ "you should set the transaction or set propagation behavior is PROPAGATION_NEVER.";
-			throw new MixQueryAndUpdateSqlException(msg);
-		}
-	}
-	
-	private void executeQuery(boolean validatePropagationIsNever){
-		if(propagationBehaviorSupport != null){
-			try {
-				this.validateIsExecuteUpdate();
-			} catch (MixQueryAndUpdateSqlException e) {
-				if(!validatePropagationIsNever){
-					logger.warn(e.getMessage(), e);
-				}
-			}
-			PropagationBehaviorSupport.executeQuery();
-		}
-	}
-	
-	private void executeUpdate(boolean validatePropagationIsNever){
-		if(propagationBehaviorSupport != null){
-			try {
-				this.validateIsExecuteQuery();
-			} catch (MixQueryAndUpdateSqlException e) {
-				if(!validatePropagationIsNever){
-					logger.warn(e.getMessage(), e);
-				}
-			}
-			PropagationBehaviorSupport.executeUpdate();
-		}
-	}
-	
-	private void synchronization(){
-		if(propagationBehaviorSupport != null && TransactionSynchronizationManager.isSynchronizationActive()){
-			Boolean executeUpdate = PropagationBehaviorSupport.isExecuteUpdate();
-			if(executeUpdate == null && propagationBehaviorSupport.isNewSynchronization()){
-				propagationBehaviorSupport.registerSynchronization();
-			}
-		}
-	}
-
 	public int getNotSwitchWhenNoSlavesCount() {
 		return notSwitchWhenNoSlavesCount;
 	}
@@ -427,15 +369,6 @@ public class QueryInterceptor implements Interceptor{
 
 	public void setSlaveQuerier(SlaveQuerier slaveQuerier) {
 		this.slaveQuerier = slaveQuerier;
-	}
-
-	public PropagationBehaviorSupport getPropagationBehaviorSupport() {
-		return propagationBehaviorSupport;
-	}
-
-	public void setPropagationBehaviorSupport(
-			PropagationBehaviorSupport propagationBehaviorSupport) {
-		this.propagationBehaviorSupport = propagationBehaviorSupport;
 	}
 	
 }
