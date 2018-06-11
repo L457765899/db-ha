@@ -185,12 +185,6 @@ public class QueryInterceptor implements Interceptor{
 				} catch (NotAllowedUpdateException e) {
 					logger.warn(e.getMessage(),e);
 				}
-			}else if(TransactionSynchronizationManager.isCurrentTransactionReadOnly()){
-				try {
-					this.notAllowedUpdateWithReadOnly(mappedStatement);
-				} catch (NotAllowedUpdateException e) {
-					logger.warn(e.getMessage(),e);
-				}
 			}
 			return;
 		}
@@ -317,12 +311,6 @@ public class QueryInterceptor implements Interceptor{
 	private void notAllowedUpdateWithNoTransactionDefinition(MappedStatement mappedStatement) throws NotAllowedUpdateException{
 		String msg = mappedStatement.getId()+" is not allowed,because it in a no transaction definition service's method."
 				+ "please set the service's method use transaction or set the propagation is SUPPORTS(NOT_SUPPORTED,NEVER) and readOnly is false.";
-		throw new NotAllowedUpdateException(msg);
-	}
-	
-	private void notAllowedUpdateWithReadOnly(MappedStatement mappedStatement) throws NotAllowedUpdateException{
-		String msg = mappedStatement.getId()+" is not allowed,because it in a read only service's method."
-				+ "please set the service's method use transaction or set the propagation is PROPAGATION_SUPPORTS and readOnly is false.";
 		throw new NotAllowedUpdateException(msg);
 	}
 	
