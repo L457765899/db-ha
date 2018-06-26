@@ -1,27 +1,29 @@
 package com.sxb.lin.trx.controller;
 
-import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
+import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
-import org.springframework.util.ReflectionUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import com.alibaba.druid.pool.DruidDataSource;
 import com.alibaba.druid.pool.DruidPooledConnection;
-import com.alibaba.druid.proxy.jdbc.ConnectionProxy;
+import com.alibaba.druid.util.JdbcUtils;
 import com.google.gson.Gson;
 import com.mysql.jdbc.ConnectionGroupManager;
-import com.mysql.jdbc.ConnectionImpl;
-import com.mysql.jdbc.LoadBalancedConnectionProxy;
+import com.mysql.jdbc.ReplicationConnectionProxy;
 import com.mysql.jdbc.jmx.LoadBalanceConnectionGroupManagerMBean;
 import com.sxb.web.commons.util.RetUtil;
 
@@ -29,7 +31,7 @@ import com.sxb.web.commons.util.RetUtil;
 @RequestMapping("/transaction/ConnectionGroup")
 public class ConnectionGroupController {
 	
-	//@Resource(name="dataSource_r")
+	@Autowired
 	private DruidDataSource druidDataSource;
 	
 	private List<DruidPooledConnection> druidPooledConnections = new CopyOnWriteArrayList<DruidPooledConnection>();
@@ -176,25 +178,26 @@ public class ConnectionGroupController {
 	
 	@RequestMapping(value="/checkConnection.json")
 	@ResponseBody
-	public String checkConnection() throws IllegalArgumentException, IllegalAccessException, SQLException{
+	public String checkConnection() throws Exception{
 		
 		int poolingCount = druidDataSource.getPoolingCount();
 		for(int i=0;i<poolingCount;i++){
 			DruidPooledConnection druidPooledConnection = druidDataSource.getConnection();
 			druidPooledConnections.add(druidPooledConnection);
-			ConnectionProxy connectionProxy = (ConnectionProxy) druidPooledConnection.getConnection();
-			LoadBalancedConnectionProxy loadBalancedConnectionProxy = (LoadBalancedConnectionProxy) Proxy.getInvocationHandler(connectionProxy.getRawObject());
-			Field liveConnectionsField = ReflectionUtils.findField(LoadBalancedConnectionProxy.class, "liveConnections");
-			liveConnectionsField.setAccessible(true);
-			@SuppressWarnings("unchecked")
-			Map<String, ConnectionImpl> liveConnections = (Map<String, ConnectionImpl>) liveConnectionsField.get(loadBalancedConnectionProxy);
-			System.out.println(liveConnections);
-			
-//			Field hostListField = ReflectionUtils.findField(LoadBalancedConnectionProxy.class, "hostList");
-//			hostListField.setAccessible(true);
-//			@SuppressWarnings("unchecked")
-//			List<String> hostList = (List<String>) hostListField.get(loadBalancedConnectionProxy);
-//			System.out.println(hostList);
+			Statement stmt = null;
+            ResultSet rs = null;
+            try {
+                stmt = druidPooledConnection.createStatement();
+                rs = stmt.executeQuery("select version()");
+                while(rs.next()){
+                	System.out.println(rs.getString(1));
+                }
+            } catch (Exception e) {
+            	e.printStackTrace();
+            } finally {
+                JdbcUtils.close(rs);
+                JdbcUtils.close(stmt);
+            }
 		}
 		
 		return new Gson().toJson(RetUtil.getRetValue(true));
@@ -240,5 +243,17 @@ public class ConnectionGroupController {
 		druidPooledConnection.close();
 		
 		return new Gson().toJson(RetUtil.getRetValue(true));
+	}
+	
+	protected ReplicationConnectionProxy getProxy(Connection connection) throws SQLException{
+		Connection unwrap = connection.unwrap(Connection.class);
+		if(Proxy.isProxyClass(unwrap.getClass())){
+			InvocationHandler invocationHandler = Proxy.getInvocationHandler(unwrap);
+			if(invocationHandler instanceof ReplicationConnectionProxy){
+				ReplicationConnectionProxy proxy = (ReplicationConnectionProxy) invocationHandler;
+				return proxy;
+			}
+		}
+		return null;	
 	}
 }

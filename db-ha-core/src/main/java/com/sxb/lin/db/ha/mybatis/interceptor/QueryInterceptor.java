@@ -228,11 +228,17 @@ public class QueryInterceptor implements Interceptor{
 	
 	protected void switchToMasterConnectionWhenNoSlaves(Invocation invocation) throws Exception {
 		Connection connection = (Connection) invocation.getArgs()[0];
-		if(noSlaves){
-			if(!connection.isReadOnly()){
-				return;//JtaTransactionManager not support read-only transaction
+		if(!connection.isReadOnly()){
+			try {
+				this.notSupportReadOnlyWithJtaTransactionManager(invocation);
+			} catch (NotSupportReadOnlyException e) {
+				logger.warn(e.getMessage(),e);
 			}
 			
+			return;//JtaTransactionManager not support read-only transaction
+		}
+		
+		if(noSlaves){
 			ReplicationConnectionProxy proxy = this.getProxy(connection);
 			if(proxy == null){
 				return;
@@ -308,9 +314,16 @@ public class QueryInterceptor implements Interceptor{
 		}
 	}
 	
+	private void notSupportReadOnlyWithJtaTransactionManager(Invocation invocation) throws Exception {
+		MappedStatement mappedStatement = this.getMappedStatement(invocation);
+		String msg = mappedStatement.getId() + " is in a read write transaction,"
+				+ "jtaTransactionManager not support read-only transaction,please remove service's transaction definition.";
+		throw new NotSupportReadOnlyException(msg);
+	}
+	
 	private void notAllowedUpdateWithNoTransactionDefinition(MappedStatement mappedStatement) throws NotAllowedUpdateException{
-		String msg = mappedStatement.getId()+" is not allowed,because it in a no transaction definition service's method."
-				+ "please set the service's method use transaction or set the propagation is SUPPORTS(NOT_SUPPORTED,NEVER) and readOnly is false.";
+		String msg = mappedStatement.getId() + " is not allowed,because it in a no transaction definition service's method."
+				+ "please set the service's method use transaction or set the propagation is SUPPORTS and readOnly is false.";
 		throw new NotAllowedUpdateException(msg);
 	}
 	
