@@ -13,6 +13,7 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.aop.aspectj.AspectJExpressionPointcut;
 import org.springframework.aop.support.DefaultPointcutAdvisor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,6 +30,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurerAdapter
 
 import redis.clients.jedis.JedisCluster;
 
+import com.alibaba.druid.pool.xa.DruidXADataSource;
 import com.alibaba.druid.support.http.StatViewServlet;
 import com.sxb.lin.db.ha.mybatis.interceptor.QueryInterceptor;
 import com.sxb.lin.db.ha.mybatis.transaction.HASpringManagedTransactionFactory;
@@ -48,9 +50,16 @@ public class HaConfig extends WebMvcConfigurerAdapter{
 		return queryInterceptor;
 	}
 	
+	@Bean(initMethod = "init",destroyMethod = "close")
+	@ConfigurationProperties("spring.datasource.druid")
+	public DataSource dataSource(){
+		return new DruidXADataSource();
+	}
+	
 	@Bean
 	@Autowired
 	public SqlSessionFactoryBean sqlSessionFactory(DataSource dataSource,Interceptor interceptor) throws IOException{
+		System.out.println(dataSource.getClass().getName());
 		SqlSessionFactoryBean bean = new SqlSessionFactoryBean();
         PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();  
         bean.setDataSource(dataSource);

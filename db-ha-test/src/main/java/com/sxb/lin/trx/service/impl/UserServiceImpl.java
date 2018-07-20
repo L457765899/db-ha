@@ -57,7 +57,7 @@ public class UserServiceImpl implements UserService {
 	/**
 	 * propagation="SUPPORTS" read-only="true"
 	 * 只读属性，是不起作用的
-	 * mybatis:创建连接，mybatis注册在事务管理器的钩子:回收连接，mybatis使用自己创建的连接
+	 * mybatis:创建连接，mybatis注册在事务管理器的钩子(@DataSourceUtils.ConnectionSynchronization):回收连接，mybatis使用自己创建的连接
 	 */
 	@Override
 	public Map<String, Object> getUser() {

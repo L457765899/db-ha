@@ -308,6 +308,7 @@ public class QueryInterceptor implements Interceptor{
 	
 	private void validateSlaveIsAlreadyFixed(){
 		if(slaveQuerier != null && needValidateSlaveStatus.compareAndSet(true, false)){
+			logger.error("slaves are synchronization failed,now validate slave is already fixed.");
 			if(slaveQuerier.isAlreadyFixedReplicate()){
 				this.setNoSlaves(false);
 			}
