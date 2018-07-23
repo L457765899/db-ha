@@ -25,7 +25,7 @@ import com.google.gson.Gson;
 import com.mysql.jdbc.ConnectionGroupManager;
 import com.mysql.jdbc.ReplicationConnectionProxy;
 import com.mysql.jdbc.jmx.LoadBalanceConnectionGroupManagerMBean;
-import com.sxb.web.commons.util.RetUtil;
+import com.sxb.lin.trx.util.RetUtil;
 
 @Controller
 @RequestMapping("/transaction/ConnectionGroup")
@@ -238,7 +238,7 @@ public class ConnectionGroupController {
 		System.out.println(catalog);
 		System.out.println(metaData.getURL());
 		
-		druidPooledConnection.getConnection().close();
+		druidPooledConnection.unwrap(Connection.class).close();
 		
 		druidPooledConnection.close();
 		

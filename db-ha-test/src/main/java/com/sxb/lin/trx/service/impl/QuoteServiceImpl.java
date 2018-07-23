@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.sxb.lin.trx.db.dao.QuoteMapper;
 import com.sxb.lin.trx.db.model.Quote;
 import com.sxb.lin.trx.service.QuoteService;
-import com.sxb.web.commons.util.RetUtil;
+import com.sxb.lin.trx.util.RetUtil;
 
 @Service("quoteService")
 public class QuoteServiceImpl implements QuoteService{

@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import com.google.gson.Gson;
-import com.sxb.web.commons.util.RetUtil;
+import com.sxb.lin.trx.util.RetUtil;
 
 @Controller
 @RequestMapping("/transaction/Converter")

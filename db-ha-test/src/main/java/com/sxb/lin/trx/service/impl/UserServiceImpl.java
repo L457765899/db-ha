@@ -15,7 +15,7 @@ import com.sxb.lin.trx.db.dao.UserMapper;
 import com.sxb.lin.trx.db.model.User;
 import com.sxb.lin.trx.service.QuoteService;
 import com.sxb.lin.trx.service.UserService;
-import com.sxb.web.commons.util.RetUtil;
+import com.sxb.lin.trx.util.RetUtil;
 
 @Service("userService")
 public class UserServiceImpl implements UserService {

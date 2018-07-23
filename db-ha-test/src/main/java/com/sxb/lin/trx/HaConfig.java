@@ -2,8 +2,10 @@ package com.sxb.lin.trx;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 
 import javax.sql.DataSource;
 
@@ -28,6 +30,7 @@ import org.springframework.web.multipart.MultipartResolver;
 import org.springframework.web.multipart.commons.CommonsMultipartResolver;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurerAdapter;
 
+import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisCluster;
 
 import com.alibaba.druid.pool.xa.DruidXADataSource;
@@ -40,6 +43,25 @@ import com.sxb.lin.db.ha.slave.SlaveRedisQuerier;
 @MapperScan("com.sxb.lin.trx.db.dao")
 @Configuration
 public class HaConfig extends WebMvcConfigurerAdapter{
+	
+	@Bean
+	public JedisCluster redisCluster(){
+		Set<HostAndPort> set = new HashSet<HostAndPort>();
+        HostAndPort hap0 = new HostAndPort("192.168.0.250",6000);
+        HostAndPort hap1 = new HostAndPort("192.168.0.250",6001);
+        HostAndPort hap2 = new HostAndPort("192.168.0.250",6002);
+        HostAndPort hap3 = new HostAndPort("192.168.0.250",6003);
+        HostAndPort hap4 = new HostAndPort("192.168.0.250",6004);
+        HostAndPort hap5 = new HostAndPort("192.168.0.250",6005);
+        set.add(hap0);
+        set.add(hap1);
+        set.add(hap2);
+        set.add(hap3);
+        set.add(hap4);
+        set.add(hap5);
+        JedisCluster redisCluster = new JedisCluster(set);
+        return redisCluster;
+	}
 	
 	@Autowired
 	@Bean(initMethod="init",destroyMethod="destroy")
