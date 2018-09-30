@@ -27,29 +27,6 @@
 		<druid.version>1.1.9</druid.version>
 		<mybatis.boot.version>1.3.2</mybatis.boot.version>
 	</properties>
-
-	<!-- 上传私服 -->
-	<distributionManagement>
-		<snapshotRepository>
-			<id>snapshots</id>
-			<url>http://121.41.29.204:9090/nexus/content/repositories/snapshots</url>
-		</snapshotRepository>
-		<repository>
-			<id>releases</id>
-			<url>http://121.41.29.204:9090/nexus/content/repositories/releases</url>
-		</repository>
-	</distributionManagement>
-
-	<!-- 下载私服 -->
-	<repositories>
-		<repository>
-			<id>hosted-public</id>
-			<url>http://121.41.29.204:9090/nexus/content/groups/public</url>
-			<snapshots>
-				<enabled>true</enabled>
-			</snapshots>
-		</repository>
-	</repositories>
 	
 	<build>
 	
