@@ -62,7 +62,7 @@ public class QueryInterceptor implements Interceptor{
 	
 	private ScheduledExecutorService scheduledExecutorService = null;
 	
-	protected void init(){
+	protected void init() throws Exception{
 		scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
 		scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 			@Override
@@ -71,6 +71,10 @@ public class QueryInterceptor implements Interceptor{
 				needValidateSlaveStatus.compareAndSet(false, true);
 			}
 		}, initialDelay, period, TimeUnit.SECONDS);
+		
+		if(slaveQuerier != null) {
+			slaveQuerier.init();
+		}
 		logger.info("QueryInterceptor have start.");
 	}
 	
@@ -82,6 +86,10 @@ public class QueryInterceptor implements Interceptor{
 				scheduledExecutorService.shutdown();
 				scheduledExecutorService = null;
 			}
+		}
+		
+		if(slaveQuerier != null) {
+			slaveQuerier.destroy();
 		}
 	}
 
@@ -341,7 +349,22 @@ public class QueryInterceptor implements Interceptor{
 	}
 
 	public void setNoSlaves(boolean noSlaves) {
+		if(!this.noSlaves && noSlaves && slaveQuerier != null) {
+			slaveQuerier.stopSlaves();
+		}
+		
 		this.noSlaves = noSlaves;
+		
+		if(noSlaves){
+			logger.error("all slave are replicate failed,set all slave unavailable.");
+		}else{
+			logger.info("all slave's replicate are already fixed,set all slave available.");
+		}
+	}
+	
+	public void setNoSlavesBySlaveQuerier(boolean noSlaves) {
+		this.noSlaves = noSlaves;
+		
 		if(noSlaves){
 			logger.error("all slave are replicate failed,set all slave unavailable.");
 		}else{
@@ -371,6 +394,7 @@ public class QueryInterceptor implements Interceptor{
 
 	public void setSlaveQuerier(SlaveQuerier slaveQuerier) {
 		this.slaveQuerier = slaveQuerier;
+		this.slaveQuerier.setQueryInterceptor(this);
 	}
 	
 }

@@ -3,15 +3,17 @@ package com.sxb.lin.db.ha.slave;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.sxb.lin.db.ha.mybatis.interceptor.QueryInterceptor;
+
 import redis.clients.jedis.JedisCommands;
 
 public class SlaveRedisQuerier implements SlaveQuerier{
 	
-	private final static String DB_HA_SLAVE_ALREADY_FIXED_COUNT_KEY = "DB_HA_SLAVE_ALREADY_FIXED_COUNT_KEY";
+	protected final static String DB_HA_SLAVE_ALREADY_FIXED_COUNT_KEY = "DB_HA_SLAVE_ALREADY_FIXED_COUNT_KEY";
 	
-	private final static Logger logger = LoggerFactory.getLogger(SlaveRedisQuerier.class);
+	protected final static Logger logger = LoggerFactory.getLogger(SlaveRedisQuerier.class);
 	
-	private JedisCommands redis;
+	protected JedisCommands redis;
 	
 	public SlaveRedisQuerier(JedisCommands redis) {
 		this.redis = redis;
@@ -19,6 +21,9 @@ public class SlaveRedisQuerier implements SlaveQuerier{
 
 	@Override
 	public boolean isAlreadyFixedReplicate() {
+		if(redis == null) {
+			return false;
+		}
 		
 		String count = redis.get(DB_HA_SLAVE_ALREADY_FIXED_COUNT_KEY);
 		if(count != null){
@@ -42,6 +47,26 @@ public class SlaveRedisQuerier implements SlaveQuerier{
 
 	public void setRedis(JedisCommands redis) {
 		this.redis = redis;
+	}
+
+	@Override
+	public void stopSlaves() {
+		
+	}
+
+	@Override
+	public void init() throws Exception {
+		
+	}
+
+	@Override
+	public void destroy() {
+		
+	}
+
+	@Override
+	public void setQueryInterceptor(QueryInterceptor queryInterceptor) {
+		
 	}
 
 }
