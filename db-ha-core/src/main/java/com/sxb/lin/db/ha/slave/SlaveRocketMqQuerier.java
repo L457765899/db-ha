@@ -9,7 +9,6 @@ import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.client.producer.SendCallback;
 import org.apache.rocketmq.client.producer.SendResult;
-import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.protocol.heartbeat.MessageModel;
@@ -66,7 +65,6 @@ public class SlaveRocketMqQuerier extends SlaveRedisQuerier implements SlaveQuer
 	public void init() throws Exception {
 		consumer = new DefaultMQPushConsumer("CONSUMER_DB_HA_RECOVER");
 		consumer.setNamesrvAddr(producer.getNamesrvAddr());
-		consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
         consumer.setMessageModel(MessageModel.BROADCASTING);
         consumer.subscribe(DB_HA_RECOVER_TOPIC, "*");
         consumer.registerMessageListener(new MessageListenerConcurrently() {
