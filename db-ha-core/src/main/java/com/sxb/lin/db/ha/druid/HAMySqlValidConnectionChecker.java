@@ -93,13 +93,15 @@ public class HAMySqlValidConnectionChecker extends ValidConnectionCheckerAdapter
             	ReplicationConnection replicationConnection = (ReplicationConnection) conn;
             	Connection slavesConnection = replicationConnection.getSlavesConnection();
             	Connection masterConnection = replicationConnection.getMasterConnection();
-            	if(slavesConnection != null && replicationConnection.isMasterConnection()) {
+            	if(slavesConnection != null && !slavesConnection.isClosed() 
+            			&& replicationConnection.isMasterConnection()) {
             		slavesStmt = slavesConnection.createStatement();
             		if (validationQueryTimeout > 0) {
             			slavesStmt.setQueryTimeout(validationQueryTimeout);
                     }
             		slavesRs = slavesStmt.executeQuery(query);
-            	}else if(masterConnection != null && !replicationConnection.isMasterConnection()) {
+            	}else if(masterConnection != null && !masterConnection.isClosed() 
+            			&& !replicationConnection.isMasterConnection()) {
             		slavesStmt = masterConnection.createStatement();
             		if (validationQueryTimeout > 0) {
             			slavesStmt.setQueryTimeout(validationQueryTimeout);
