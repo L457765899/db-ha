@@ -97,9 +97,11 @@ public class QueryInterceptor implements Interceptor{
 	public Object intercept(Invocation invocation) throws Throwable {
 		
 		if(!TransactionSynchronizationManager.isSynchronizationActive()){
-			this.switchToSlavesConnectionWhenReadOnly(invocation,false);//no TransactionDefinition no transaction
+			//no TransactionDefinition no transaction
+			this.switchToSlavesConnectionWhenReadOnly(invocation,false);
 		}else if(!TransactionSynchronizationManager.isActualTransactionActive()){
-			this.switchToSlavesConnectionWhenReadOnly(invocation,true);//have TransactionDefinition no transaction
+			//have TransactionDefinition no transaction
+			this.switchToSlavesConnectionWhenReadOnly(invocation,true);
 		}else if(TransactionSynchronizationManager.isCurrentTransactionReadOnly()){
 			//JtaTransactionManager not support read-only transaction
 			//DataSourceTransactionManager support read-only transaction
