@@ -39,7 +39,16 @@ public class UserServiceImpl implements UserService {
 		u.setPwd("222222");
 		userMapper.insertSelective(u);
 		//throw new RuntimeException();
-		return RetUtil.getRetValue(true);
+		try {
+			return RetUtil.getRetValue(true);
+		} finally {
+			this.testFinally();
+		}
+		
+	}
+	
+	private void testFinally() {
+		throw new RuntimeException();
 	}
 
 	/**

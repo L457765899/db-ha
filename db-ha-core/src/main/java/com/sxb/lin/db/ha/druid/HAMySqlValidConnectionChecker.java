@@ -73,51 +73,55 @@ public class HAMySqlValidConnectionChecker extends ValidConnectionCheckerAdapter
         
         Statement stmt = null;
         ResultSet rs = null;
-        Statement slavesStmt = null;
-        ResultSet slavesRs = null;
         try {
             stmt = conn.createStatement();
             if (validationQueryTimeout > 0) {
                 stmt.setQueryTimeout(validationQueryTimeout);
             }
             rs = stmt.executeQuery(query);
-            
-			if (conn instanceof DruidPooledConnection) {
-			    conn = ((DruidPooledConnection) conn).getConnection();
-			}
-			
-			if (conn instanceof ConnectionProxy) {
-			    conn = ((ConnectionProxy) conn).getRawObject();
-			}
-            if(conn instanceof ReplicationConnection) {
-            	ReplicationConnection replicationConnection = (ReplicationConnection) conn;
-            	Connection slavesConnection = replicationConnection.getSlavesConnection();
-            	Connection masterConnection = replicationConnection.getMasterConnection();
-            	if(slavesConnection != null && !slavesConnection.isClosed() 
-            			&& replicationConnection.isMasterConnection()) {
-            		slavesStmt = slavesConnection.createStatement();
-            		if (validationQueryTimeout > 0) {
-            			slavesStmt.setQueryTimeout(validationQueryTimeout);
-                    }
-            		slavesRs = slavesStmt.executeQuery(query);
-            	}else if(masterConnection != null && !masterConnection.isClosed() 
-            			&& !replicationConnection.isMasterConnection()) {
-            		slavesStmt = masterConnection.createStatement();
-            		if (validationQueryTimeout > 0) {
-            			slavesStmt.setQueryTimeout(validationQueryTimeout);
-                    }
-            		slavesRs = slavesStmt.executeQuery(query);
-            	}
-            }
-            
-            return true;
         } finally {
-            JdbcUtils.close(rs);
+        	JdbcUtils.close(rs);
             JdbcUtils.close(stmt);
-            JdbcUtils.close(slavesRs);
-            JdbcUtils.close(slavesStmt);
         }
-
+        
+        Connection mySQLConnection = conn;
+        if (mySQLConnection instanceof DruidPooledConnection) {
+        	mySQLConnection = ((DruidPooledConnection) mySQLConnection).getConnection();
+        }
+        
+        if(mySQLConnection instanceof ConnectionProxy) {
+        	mySQLConnection = ((ConnectionProxy) mySQLConnection).getRawObject();
+        }
+        
+    	if(mySQLConnection instanceof ReplicationConnection) {
+			ReplicationConnection replicationConnection = (ReplicationConnection) mySQLConnection;
+			Statement otherStmt = null;
+	        ResultSet otherRs = null;
+	        try {
+				if(replicationConnection.isMasterConnection() && !conn.isReadOnly()) {
+		        	conn.setReadOnly(true);
+		        	otherStmt = conn.createStatement();
+		            if (validationQueryTimeout > 0) {
+		            	otherStmt.setQueryTimeout(validationQueryTimeout);
+		            }
+		            otherRs = otherStmt.executeQuery(query);
+		            conn.setReadOnly(false);
+            	}else if(!replicationConnection.isMasterConnection() && conn.isReadOnly()){
+			        conn.setReadOnly(false);
+            		otherStmt = conn.createStatement();
+		            if (validationQueryTimeout > 0) {
+		            	otherStmt.setQueryTimeout(validationQueryTimeout);
+		            }
+		            otherRs = otherStmt.executeQuery(query);
+		            conn.setReadOnly(true);
+            	}
+	        } finally {
+	            JdbcUtils.close(otherStmt);
+	            JdbcUtils.close(otherRs);
+	        }
+		}
+        
+        return true;
     }
 
 }
