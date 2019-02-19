@@ -8,6 +8,8 @@ import javax.sql.XAConnection;
 
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import com.alibaba.druid.pool.DruidPooledConnection;
+import com.alibaba.druid.proxy.jdbc.ConnectionProxy;
 import com.atomikos.datasource.pool.ConnectionPoolProperties;
 import com.atomikos.datasource.pool.CreateConnectionException;
 import com.atomikos.datasource.xa.jdbc.JdbcTransactionalResource;
@@ -36,14 +38,26 @@ public class HAAtomikosXAPooledConnection extends AtomikosXAPooledConnection {
 		
 		if(usePingMethod) {
 			try {
-				Connection unwrap = connection.unwrap(Connection.class);
-				if(unwrap instanceof MySQLConnection) {
-					MySQLConnection mySQLConnection = (MySQLConnection) unwrap;
+				Connection conn = connection;
+				if (conn instanceof DruidPooledConnection) {
+					DruidPooledConnection druidPooledConnection = (DruidPooledConnection) conn;
+					if(druidPooledConnection.isDisable()) {
+						Throwable disableError = druidPooledConnection.getDisableError();
+						Exception cause = new Exception(disableError);
+						throw new CreateConnectionException ( "Error connection is disable" , cause );
+					}
+	                conn = druidPooledConnection.getConnection();
+	            }
+				if (conn instanceof ConnectionProxy) {
+	                conn = ((ConnectionProxy) conn).getRawObject();
+	            }
+				if(conn instanceof MySQLConnection) {
+					MySQLConnection mySQLConnection = (MySQLConnection) conn;
 	            	mySQLConnection.ping();
 	                return;
 				}
 			} catch (SQLException e) {
-				throw new CreateConnectionException ( "Error unwrap connection" ,  e );
+				throw new CreateConnectionException ( "Error connection" , e );
 			}
 		}
 		
