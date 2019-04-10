@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 
 import com.sxb.lin.db.ha.mybatis.interceptor.QueryInterceptor;
 
-import redis.clients.jedis.JedisCommands;
+import redis.clients.jedis.JedisCluster;
 
 public class SlaveRocketMqQuerier extends SlaveRedisQuerier implements SlaveQuerier{
 	
@@ -36,7 +36,7 @@ public class SlaveRocketMqQuerier extends SlaveRedisQuerier implements SlaveQuer
 		this.producer = producer;
 	}
 
-	public SlaveRocketMqQuerier(JedisCommands redis,DefaultMQProducer producer) {
+	public SlaveRocketMqQuerier(JedisCluster redis,DefaultMQProducer producer) {
 		super(redis);
 		this.producer = producer;
 	}

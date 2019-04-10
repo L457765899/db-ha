@@ -7,7 +7,7 @@
 	<parent>
 		<groupId>com.sxb.lin.db.ha</groupId>
 		<artifactId>db-ha-parent</artifactId>
-		<version>2.2.2-RELEASE</version>
+		<version>2.2.3-RELEASE</version>
 	</parent>
 	
 	<artifactId>db-ha-test</artifactId>

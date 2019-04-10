@@ -5,7 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import com.sxb.lin.db.ha.mybatis.interceptor.QueryInterceptor;
 
-import redis.clients.jedis.JedisCommands;
+import redis.clients.jedis.JedisCluster;
 
 public class SlaveRedisQuerier implements SlaveQuerier{
 	
@@ -13,9 +13,9 @@ public class SlaveRedisQuerier implements SlaveQuerier{
 	
 	protected final static Logger logger = LoggerFactory.getLogger(SlaveRedisQuerier.class);
 	
-	protected JedisCommands redis;
+	protected JedisCluster redis;
 	
-	public SlaveRedisQuerier(JedisCommands redis) {
+	public SlaveRedisQuerier(JedisCluster redis) {
 		this.redis = redis;
 	}
 
@@ -41,11 +41,11 @@ public class SlaveRedisQuerier implements SlaveQuerier{
 		return false;
 	}
 
-	public JedisCommands getRedis() {
+	public JedisCluster getRedis() {
 		return redis;
 	}
 
-	public void setRedis(JedisCommands redis) {
+	public void setRedis(JedisCluster redis) {
 		this.redis = redis;
 	}
 
