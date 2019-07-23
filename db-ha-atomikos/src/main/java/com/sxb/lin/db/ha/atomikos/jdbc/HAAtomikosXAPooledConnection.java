@@ -41,10 +41,14 @@ public class HAAtomikosXAPooledConnection extends AtomikosXAPooledConnection {
 				Connection conn = connection;
 				if (conn instanceof DruidPooledConnection) {
 					DruidPooledConnection druidPooledConnection = (DruidPooledConnection) conn;
-					if(druidPooledConnection.isDisable()) {
+					if(druidPooledConnection.isClosed()) {
 						Throwable disableError = druidPooledConnection.getDisableError();
-						Exception cause = new Exception(disableError);
-						throw new CreateConnectionException ( "Error connection is disable" , cause );
+						if(disableError != null) {
+							Exception cause = new Exception(disableError);
+							throw new CreateConnectionException ( "Error connection is close" , cause);
+						}else {
+							throw new CreateConnectionException ( "Error connection is close");
+						}
 					}
 	                conn = druidPooledConnection.getConnection();
 	            }

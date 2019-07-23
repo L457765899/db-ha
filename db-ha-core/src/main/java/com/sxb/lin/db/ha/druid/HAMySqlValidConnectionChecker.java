@@ -52,7 +52,11 @@ public class HAMySqlValidConnectionChecker extends ValidConnectionCheckerAdapter
 
         if (usePingMethod) {
             if (conn instanceof DruidPooledConnection) {
-                conn = ((DruidPooledConnection) conn).getConnection();
+            	DruidPooledConnection druidPooledConnection = (DruidPooledConnection) conn;
+            	if(druidPooledConnection.isClosed()) {
+            		return false;
+            	}
+                conn = druidPooledConnection.getConnection();
             }
 
             if (conn instanceof ConnectionProxy) {
